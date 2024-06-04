@@ -96,12 +96,16 @@ default_alloc_pages(size_t n) {
         }
     }
     if (page != NULL) {
-        list_del(&(page->page_link));
+        // list_del(&(page->page_link));
         if (page->property > n) {
             struct Page *p = page + n;
             p->property = page->property - n;
-            list_add(&free_list, &(p->page_link));
-    }
+            list_add(&(page->page_link), &(p->page_link));
+            SetPageProperty(p);        
+            // 将多出来的插入到 被分配掉的页块后面
+        }
+        //在空闲页链表中删除掉原来的空闲页
+        list_del(&(page->page_link));
         nr_free -= n;
         ClearPageProperty(page);
     }
@@ -118,7 +122,7 @@ default_free_pages(struct Page *base, size_t n) {
         set_page_ref(p, 0);
     }
     base->property = n;
-    SetPageProperty(base);
+    // SetPageProperty(base);
     list_entry_t *le = list_next(&free_list);
     while (le != &free_list) {
         p = le2page(le, page_link);
@@ -130,13 +134,23 @@ default_free_pages(struct Page *base, size_t n) {
         }
         else if (p + p->property == base) {
             p->property += base->property;
-            ClearPageProperty(base);
+            // ClearPageProperty(base);
             base = p;
             list_del(&(p->page_link));
         }
     }
+    SetPageProperty(base);
     nr_free += n;
-    list_add(&free_list, &(base->page_link));
+    le = list_next(&free_list);
+    // 将合并好的合适的页块添加回空闲页块链表
+    while (le != &free_list) {
+        p = le2page(le, page_link);
+        if (base + base->property <= p) {
+            break;
+        }
+        le = list_next(le);
+    }
+    list_add_before(le, &(base->page_link));//将空闲块对应的链表插入空闲链表中
 }
 
 static size_t
