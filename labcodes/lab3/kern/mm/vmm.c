@@ -364,6 +364,37 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
     *   mm->pgdir : the PDT of these vma
     *
     */
+    ptep = get_pte(mm->pgdir, addr, 1);
+    //根据缺页地址查找对应pte,若对应页表不存在，则创建一个  
+    if (ptep == NULL) {//若创建失败
+        cprintf("do_pgfault failed: get_pte in do_pgfault failed\n");
+        goto failed;
+    }
+    if(*ptep == 0){//表项为0，情况一
+        if(pgdir_alloc_page(mm->pgdir, addr, perm) == NULL){
+        // 分配物理页，并且与对应的虚拟页建立映射关系，若为空报错
+            cprintf("do_pgfault failed: pgdir_alloc_page in do_pgfault failed\n");
+            goto failed;
+        }
+    }
+    else{
+        if(swap_init_ok){//交换机制正确被初始化
+            struct Page *page = NULL;
+            ret = swap_in(mm, addr, &page);//// 将物理页换入到内存中
+            if(ret != 0){
+                cprintf("do_pgfault failed: swap_in in do_pgfault failed\n");
+                goto failed;
+            }
+            page_insert(mm->pgdir, page, addr, perm);//建立物理地址与线性地址之间的映射；
+            swap_map_swappable(mm, addr, page, 1);//设置当前的物理页为可交换的
+            page->pra_vaddr = addr;//设置页对应的虚拟地址
+        }   
+        else{
+            cprintf("do_pgfault failed: swap_init_ok in do_pgfault failed , ptep is %x\n",*ptep);
+            goto failed;
+        }
+    }
+
 #if 0
     /*LAB3 EXERCISE 1: YOUR CODE*/
     ptep = ???              //(1) try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
